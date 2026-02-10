@@ -48,7 +48,7 @@ from .uilts import (
     untokenize_figure_of_table,
 )
 
-IMAGE_LABELS = ["image", "header_image", "footer_image"]
+IMAGE_LABELS = ["image", "header_image", "footer_image", "inline_formula"]
 
 
 @benchmark.time_methods
@@ -511,6 +511,7 @@ class _PaddleOCRVLPipeline(BasePipeline):
     def predict(
         self,
         input: Union[str, list[str], np.ndarray, list[np.ndarray]],
+        layout_boxes: Optional[Union[list[dict], list[list[dict]]]] = None,
         use_doc_orientation_classify: Union[bool, None] = False,
         use_doc_unwarping: Union[bool, None] = False,
         use_layout_detection: Union[bool, None] = None,
@@ -641,24 +642,54 @@ class _PaddleOCRVLPipeline(BasePipeline):
                     item["output_img"] for item in doc_preprocessor_results
                 ]
                 if model_settings["use_layout_detection"]:
-                    layout_det_results = list(
-                        self.layout_det_model(
-                            doc_preprocessor_images,
-                            threshold=layout_threshold,
-                            layout_nms=layout_nms,
-                            layout_unclip_ratio=layout_unclip_ratio,
-                            layout_merge_bboxes_mode=layout_merge_bboxes_mode,
-                            layout_shape_mode=layout_shape_mode,
-                            filter_overlap_boxes=False,
+                    if layout_boxes is not None:
+                        # Use user-provided layout boxes
+                        print(f"DEBUG: Using custom layout_boxes, got {len(layout_boxes)} pages of boxes")
+                        print(f"DEBUG: Processing {len(doc_preprocessor_images)} preprocessor images")
+                        layout_det_results = []
+                        for idx, doc_preprocessor_image in enumerate(doc_preprocessor_images):
+                            # Use absolute page index from page_indexes, not batch-relative idx
+                            absolute_page_idx = page_indexes[idx] if idx < len(page_indexes) else idx
+                            
+                            # Handle both single page and multi-page inputs
+                            if isinstance(layout_boxes[0], list):
+                                boxes = layout_boxes[absolute_page_idx] if absolute_page_idx < len(layout_boxes) else []
+                            else:
+                                boxes = layout_boxes if absolute_page_idx == 0 else []
+                            
+                            print(f"DEBUG: Batch idx {idx}, absolute page {absolute_page_idx}: using {len(boxes)} boxes")
+                            layout_det_results.append({
+                                "input_path": input_paths[idx] if idx < len(input_paths) else None,
+                                "page_index": absolute_page_idx,
+                                "boxes": boxes
+                            })
+                        
+                        imgs_in_doc = [
+                            gather_imgs(doc_pp_img, layout_det_res["boxes"])
+                            for doc_pp_img, layout_det_res in zip(
+                                doc_preprocessor_images, layout_det_results
+                            )
+                        ]
+                    else:
+                        # Run layout detection model
+                        layout_det_results = list(
+                            self.layout_det_model(
+                                doc_preprocessor_images,
+                                threshold=layout_threshold,
+                                layout_nms=layout_nms,
+                                layout_unclip_ratio=layout_unclip_ratio,
+                                layout_merge_bboxes_mode=layout_merge_bboxes_mode,
+                                layout_shape_mode=layout_shape_mode,
+                                filter_overlap_boxes=False,
+                            )
                         )
-                    )
 
-                    imgs_in_doc = [
-                        gather_imgs(doc_pp_img, layout_det_res["boxes"])
-                        for doc_pp_img, layout_det_res in zip(
-                            doc_preprocessor_images, layout_det_results
-                        )
-                    ]
+                        imgs_in_doc = [
+                            gather_imgs(doc_pp_img, layout_det_res["boxes"])
+                            for doc_pp_img, layout_det_res in zip(
+                                doc_preprocessor_images, layout_det_results
+                            )
+                        ]
                 else:
                     layout_det_results = []
                     for doc_preprocessor_image in doc_preprocessor_images:

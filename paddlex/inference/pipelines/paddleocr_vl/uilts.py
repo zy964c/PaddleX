@@ -108,12 +108,8 @@ def filter_overlap_boxes(
                 boxes[i]["label"] == "inline_formula"
                 or boxes[j]["label"] == "inline_formula"
             ):
-                if overlap_ratio > 0.5:
-                    if boxes[i]["label"] == "inline_formula":
-                        dropped_indexes.add(i)
-                    if boxes[j]["label"] == "inline_formula":
-                        dropped_indexes.add(j)
-                    continue
+                # Keep inline_formula, don't drop it
+                continue
             if overlap_ratio > 0.7:
                 if layout_shape_mode != "rect" and "polygon_points" in boxes[i]:
                     poly_overlap_ratio = calculate_polygon_overlap_ratio(

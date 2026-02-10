@@ -252,7 +252,8 @@ class _LayoutParsingPipelineV2(BasePipeline):
         """
         object_boxes = []
         for box_info in layout_det_res["boxes"]:
-            if box_info["label"].lower() in ["formula", "table", "seal"]:
+            if box_info["label"].lower() in ["formula", "display_formula", "table", "seal"]:
+                # inline_formula is NOT excluded - it's treated as image
                 object_boxes.append(box_info["coordinate"])
         object_boxes = np.array(object_boxes)
         sub_regions_ocr_res = get_sub_regions_ocr_res(
@@ -341,10 +342,39 @@ class _LayoutParsingPipelineV2(BasePipeline):
             smaller=True,
         )
 
+        # Filter out inline_formula from formula_res_list - they should be treated as images, not merged into text
+        # Match formula boxes with layout boxes to get their labels
+        print(f"DEBUG: formula_res_list has {len(formula_res_list)} formulas", flush=True)
+        print(f"DEBUG: layout_det_res has {len(layout_det_res['boxes'])} boxes", flush=True)
+        
+        formula_res_list_filtered = []
+        inline_count = 0
+        for formula_res in formula_res_list:
+            fx1, fy1, fx2, fy2 = list(map(int, formula_res["dt_polys"]))
+            # Find matching layout box
+            is_inline = False
+            for box_info in layout_det_res["boxes"]:
+                lx1, ly1, lx2, ly2 = box_info["coordinate"]
+                # Check if boxes overlap significantly
+                if abs(fx1 - lx1) < 10 and abs(fy1 - ly1) < 10 and abs(fx2 - lx2) < 10 and abs(fy2 - ly2) < 10:
+                    if box_info["label"] == "inline_formula":
+                        is_inline = True
+                        inline_count += 1
+                        print(f"DEBUG: Filtered inline_formula at [{fx1}, {fy1}, {fx2}, {fy2}]", flush=True)
+                        break
+            if not is_inline:
+                formula_res_list_filtered.append(formula_res)
+        
+        print(f"DEBUG: Filtered {inline_count} inline formulas, keeping {len(formula_res_list_filtered)} formulas", flush=True)
+        
         # convert formula_res_list to OCRResult format
-        convert_formula_res_to_ocr_format(formula_res_list, overall_ocr_res)
+        convert_formula_res_to_ocr_format(formula_res_list_filtered, overall_ocr_res)
 
         # match layout boxes and ocr boxes and get some information for layout_order_config
+        print(f"DEBUG: layout_det_res has {len(layout_det_res['boxes'])} boxes", flush=True)
+        inline_formula_count = sum(1 for b in layout_det_res['boxes'] if b['label'].lower() == 'inline_formula')
+        print(f"DEBUG: Found {inline_formula_count} inline_formula boxes in layout_det_res", flush=True)
+        
         for box_idx, box_info in enumerate(layout_det_res["boxes"]):
             box = box_info["coordinate"]
             label = box_info["label"].lower()
@@ -367,7 +397,8 @@ class _LayoutParsingPipelineV2(BasePipeline):
             if label == "doc_title":
                 doc_title_num += 1
 
-            if label not in ["formula", "table", "seal"]:
+            if label not in ["formula", "display_formula", "inline_formula", "table", "seal"]:
+                # inline_formula, display_formula, and formula are excluded from OCR matching - treated as images
                 _, matched_idxes = get_sub_regions_ocr_res(
                     overall_ocr_res, [box], return_match_idx=True
                 )
@@ -377,6 +408,9 @@ class _LayoutParsingPipelineV2(BasePipeline):
                         matched_ocr_dict[matched_idx] = [box_idx]
                     else:
                         matched_ocr_dict[matched_idx].append(box_idx)
+            else:
+                if label == "inline_formula":
+                    print(f"DEBUG: Skipping OCR match for inline_formula at box_idx {box_idx}, bbox {box}", flush=True)
 
         # fix the footnote label
         for footnote_idx in footnote_list:
