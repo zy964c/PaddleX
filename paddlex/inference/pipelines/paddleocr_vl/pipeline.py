@@ -48,7 +48,7 @@ from .uilts import (
     untokenize_figure_of_table,
 )
 
-IMAGE_LABELS = ["image", "header_image", "footer_image", "inline_formula"]
+IMAGE_LABELS = ["image", "header_image", "footer_image"]
 
 
 @benchmark.time_methods
@@ -643,21 +643,15 @@ class _PaddleOCRVLPipeline(BasePipeline):
                 ]
                 if model_settings["use_layout_detection"]:
                     if layout_boxes is not None:
-                        # Use user-provided layout boxes
-                        print(f"DEBUG: Using custom layout_boxes, got {len(layout_boxes)} pages of boxes")
-                        print(f"DEBUG: Processing {len(doc_preprocessor_images)} preprocessor images")
                         layout_det_results = []
                         for idx, doc_preprocessor_image in enumerate(doc_preprocessor_images):
-                            # Use absolute page index from page_indexes, not batch-relative idx
                             absolute_page_idx = page_indexes[idx] if idx < len(page_indexes) else idx
                             
-                            # Handle both single page and multi-page inputs
                             if isinstance(layout_boxes[0], list):
                                 boxes = layout_boxes[absolute_page_idx] if absolute_page_idx < len(layout_boxes) else []
                             else:
                                 boxes = layout_boxes if absolute_page_idx == 0 else []
                             
-                            print(f"DEBUG: Batch idx {idx}, absolute page {absolute_page_idx}: using {len(boxes)} boxes")
                             layout_det_results.append({
                                 "input_path": input_paths[idx] if idx < len(input_paths) else None,
                                 "page_index": absolute_page_idx,

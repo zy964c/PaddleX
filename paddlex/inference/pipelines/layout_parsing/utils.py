@@ -407,11 +407,6 @@ def remove_overlap_blocks(
     dropped_indexes = set()
     blocks = deepcopy(blocks)
     overlap_image_blocks = []
-    
-    # Debug: count inline_formula before removal
-    inline_count_before = sum(1 for b in blocks["boxes"] if b["label"] == "inline_formula")
-    print(f"DEBUG remove_overlap_blocks: {inline_count_before} inline_formula boxes before removal", flush=True)
-    
     # Iterate over each pair of blocks to find overlaps
     for i, block1 in enumerate(blocks["boxes"]):
         for j in range(i + 1, len(blocks["boxes"])):
@@ -427,17 +422,6 @@ def remove_overlap_blocks(
                 smaller=smaller,
             )
             if overlap_box_index is not None:
-                # Special handling for inline_formula: keep it, remove overlapping text
-                is_block1_inline_formula = block1["label"] == "inline_formula"
-                is_block2_inline_formula = block2["label"] == "inline_formula"
-                
-                if is_block1_inline_formula or is_block2_inline_formula:
-                    # If one is inline_formula, keep inline_formula, drop the other
-                    drop_index = j if is_block1_inline_formula else i
-                    dropped_indexes.add(drop_index)
-                    continue
-                
-                # Original logic for other blocks
                 is_block1_image = block1["label"] == "image"
                 is_block2_image = block2["label"] == "image"
 
