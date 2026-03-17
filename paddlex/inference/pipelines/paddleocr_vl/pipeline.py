@@ -43,6 +43,7 @@ from .uilts import (
     merge_blocks,
     post_process_for_spotting,
     pre_process_for_spotting,
+    sort_boxes_reading_order,
     tokenize_figure_of_table,
     truncate_repetitive_content,
     untokenize_figure_of_table,
@@ -282,7 +283,7 @@ class _PaddleOCRVLPipeline(BasePipeline):
             zip(images, layout_det_results, imgs_in_doc)
         ):
             layout_det_res = filter_overlap_boxes(layout_det_res, layout_shape_mode)
-            boxes = layout_det_res["boxes"]
+            boxes = sort_boxes_reading_order(layout_det_res["boxes"])
             blocks_for_img = self.crop_by_boxes(image, boxes, layout_shape_mode)
             del layout_det_res, boxes
             if merge_layout_blocks:

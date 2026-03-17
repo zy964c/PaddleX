@@ -140,6 +140,43 @@ def filter_overlap_boxes(
     return layout_det_res_filtered
 
 
+def sort_boxes_reading_order(boxes: List[Dict]) -> List[Dict]:
+    """Sort layout boxes in reading order using Y-overlap row grouping.
+
+    Groups boxes into rows where vertical projections overlap, sorts rows
+    top-to-bottom, and boxes within each row left-to-right.
+    """
+    if len(boxes) <= 1:
+        return boxes
+
+    sorted_by_y = sorted(range(len(boxes)), key=lambda i: boxes[i]["coordinate"][1])
+    rows = []
+    current_row = [sorted_by_y[0]]
+    for idx in sorted_by_y[1:]:
+        coord = boxes[idx]["coordinate"]
+        # check Y-overlap with any box in current row
+        merged = False
+        for row_idx in current_row:
+            rc = boxes[row_idx]["coordinate"]
+            overlap = min(coord[3], rc[3]) - max(coord[1], rc[1])
+            min_h = min(coord[3] - coord[1], rc[3] - rc[1])
+            if min_h > 0 and overlap / min_h > 0.5:
+                merged = True
+                break
+        if merged:
+            current_row.append(idx)
+        else:
+            rows.append(current_row)
+            current_row = [idx]
+    rows.append(current_row)
+
+    result = []
+    for row in rows:
+        row.sort(key=lambda i: boxes[i]["coordinate"][0])
+        result.extend(boxes[i] for i in row)
+    return result
+
+
 def to_pil_image(img):
     """
     Convert the input to a PIL Image.
