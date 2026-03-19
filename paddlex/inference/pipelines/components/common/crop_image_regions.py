@@ -62,6 +62,9 @@ class CropByBoxes(BaseOperator):
             box = box_info["coordinate"]
             label = box_info.get("label", label_id)
             xmin, ymin, xmax, ymax = [int(i) for i in box]
+            if xmax <= xmin or ymax <= ymin:
+                output_list.append({"img": None, "box": box, "label": label})
+                continue
             img_crop = img[ymin:ymax, xmin:xmax].copy()
             out_info = {"img": img_crop, "box": box, "label": label}
             if layout_shape_mode != "rect" and "polygon_points" in box_info:

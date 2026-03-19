@@ -1058,6 +1058,9 @@ def truncate_repetitive_content(
 def crop_margin(img):
     import cv2
 
+    if img.size == 0:
+        return img
+
     if len(img.shape) == 3:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     else:

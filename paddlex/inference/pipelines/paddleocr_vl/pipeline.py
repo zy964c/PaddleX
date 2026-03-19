@@ -294,7 +294,7 @@ class _PaddleOCRVLPipeline(BasePipeline):
             for j, block in enumerate(blocks_for_img):
                 block_img = block["img"]
                 block_label = block["label"]
-                if block_label not in image_labels and block_img is not None:
+                if block_label not in image_labels and block_img is not None and block_img.size > 0:
                     figure_token_map = {}
                     text_prompt = "OCR:"
                     min_pixels = vlm_kwargs.pop("ocr_min_pixels", default_min_pixels)
@@ -474,7 +474,7 @@ class _PaddleOCRVLPipeline(BasePipeline):
                             "block": block_info,
                         }
                     )
-                if block_label in vis_image_labels and block_img is not None:
+                if block_label in vis_image_labels and block_img is not None and block_img.size > 0:
                     img_path = construct_img_path(block["label"], block["box"])
                     image_path_to_obj_map[img_path] = block_info
                     if img_path not in drop_figures_set:
