@@ -131,9 +131,15 @@ def filter_overlap_boxes(
                 } and boxes[i]["label"] != boxes[j]["label"]:
                     continue
                 if box_area_i >= box_area_j:
-                    dropped_indexes.add(j)
+                    if boxes[i]["score"] < boxes[j]["score"] and box_area_i > box_area_j * 2:
+                        dropped_indexes.add(i)
+                    else:
+                        dropped_indexes.add(j)
                 else:
-                    dropped_indexes.add(i)
+                    if boxes[j]["score"] < boxes[i]["score"] and box_area_j > box_area_i * 2:
+                        dropped_indexes.add(j)
+                    else:
+                        dropped_indexes.add(i)
     layout_det_res_filtered["boxes"] = [
         box for idx, box in enumerate(boxes) if idx not in dropped_indexes
     ]
