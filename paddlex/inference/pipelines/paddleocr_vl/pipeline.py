@@ -288,7 +288,7 @@ class _PaddleOCRVLPipeline(BasePipeline):
             del layout_det_res, boxes
             if merge_layout_blocks:
                 blocks_for_img = merge_blocks(
-                    blocks_for_img, non_merge_labels=image_labels + ["table"]
+                    blocks_for_img, non_merge_labels=image_labels + ["table", "inline_formula", "display_formula", "formula"]
                 )
             blocks.append(blocks_for_img)
             for j, block in enumerate(blocks_for_img):
