@@ -397,13 +397,19 @@ def merge_blocks(blocks, non_merge_labels, layout_shape_mode="auto"):
                 merge_aligns = aligns if aligns else []
                 w, h = calc_merged_wh(imgs)
                 aspect_ratio = h / w if w != 0 else float("inf")
+                # Collect non-merge blocks between start and end
+                non_merge_in_range = {}
+                for n_idx in range(start + 1, end):
+                    if n_idx in non_merge_blocks:
+                        non_merge_in_range[n_idx] = non_merge_blocks[n_idx]
+                # Build merged group blocks
+                group_blocks = {}
                 if aspect_ratio >= 3:
                     for j, block_idx in enumerate(group_indices):
                         block = blocks[block_idx].copy()
                         block["img"] = blocks[block_idx]["img"]
                         block["merge_aligns"] = None
-                        result_blocks.append(block)
-                        used_indices.add(block_idx)
+                        group_blocks[block_idx] = block
                 else:
                     merged_img = merge_images(imgs, merge_aligns, layout_shape_mode)
                     for j, block_idx in enumerate(group_indices):
@@ -411,15 +417,14 @@ def merge_blocks(blocks, non_merge_labels, layout_shape_mode="auto"):
                         block["img"] = merged_img if j == 0 else None
                         block["merge_aligns"] = merge_aligns if j == 0 else None
                         block["group_id"] = group_indices[0]
-                        result_blocks.append(block)
-                        used_indices.add(block_idx)
-                insert_list = []
-                for n_idx in range(start + 1, end):
-                    if n_idx in non_merge_blocks:
-                        insert_list.append(n_idx)
-                for n_idx in insert_list:
-                    result_blocks.append(non_merge_blocks[n_idx])
-                    used_indices.add(n_idx)
+                        group_blocks[block_idx] = block
+                # Interleave group blocks and non-merge blocks by original index
+                for orig_idx in sorted(set(group_indices) | set(non_merge_in_range)):
+                    if orig_idx in group_blocks:
+                        result_blocks.append(group_blocks[orig_idx])
+                    elif orig_idx in non_merge_in_range:
+                        result_blocks.append(non_merge_in_range[orig_idx])
+                    used_indices.add(orig_idx)
                 idx = end + 1
                 break
         if group_found:
