@@ -55,7 +55,7 @@ _NON_SPLIT_LABELS = frozenset(
     ["table", "chart", "seal", "inline_formula", "display_formula", "formula",
      "image", "header_image", "footer_image"]
 )
-_MAX_BLOCK_HEIGHT = 600  # pixels at 144 DPI (~27 lines)
+_MAX_BLOCK_HEIGHT = 220  # pixels at 144 DPI (~10 lines)
 
 
 def _split_tall_blocks(blocks):
