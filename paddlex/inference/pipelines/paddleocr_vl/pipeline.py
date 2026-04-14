@@ -51,6 +51,33 @@ from .uilts import (
 
 IMAGE_LABELS = ["image", "header_image", "footer_image"]
 
+_NON_SPLIT_LABELS = frozenset(
+    ["table", "chart", "seal", "inline_formula", "display_formula", "formula",
+     "image", "header_image", "footer_image"]
+)
+_MAX_BLOCK_HEIGHT = 600  # pixels at 144 DPI (~27 lines)
+
+
+def _split_tall_blocks(blocks):
+    """Split text blocks taller than _MAX_BLOCK_HEIGHT into vertical sub-blocks."""
+    result = []
+    for block in blocks:
+        img = block["img"]
+        if (img is None or img.size == 0
+                or block["label"] in _NON_SPLIT_LABELS
+                or img.shape[0] <= _MAX_BLOCK_HEIGHT):
+            result.append(block)
+            continue
+        h = img.shape[0]
+        n = (h + _MAX_BLOCK_HEIGHT - 1) // _MAX_BLOCK_HEIGHT
+        step = h // n
+        x1, y1, x2, y2 = block["box"]
+        for k in range(n):
+            top = k * step
+            bot = h if k == n - 1 else (k + 1) * step
+            result.append({**block, "img": img[top:bot], "box": [x1, y1 + top, x2, y1 + bot]})
+    return result
+
 
 @benchmark.time_methods
 class _PaddleOCRVLPipeline(BasePipeline):
@@ -290,6 +317,7 @@ class _PaddleOCRVLPipeline(BasePipeline):
                 blocks_for_img = merge_blocks(
                     blocks_for_img, non_merge_labels=image_labels + ["table", "inline_formula", "display_formula", "formula"]
                 )
+            blocks_for_img = _split_tall_blocks(blocks_for_img)
             blocks.append(blocks_for_img)
             for j, block in enumerate(blocks_for_img):
                 block_img = block["img"]
