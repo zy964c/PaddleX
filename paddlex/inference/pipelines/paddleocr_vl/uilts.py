@@ -183,6 +183,84 @@ def sort_boxes_reading_order(boxes: List[Dict]) -> List[Dict]:
     return result
 
 
+def split_tall_text_boxes(boxes, image, min_height=400, max_slice=350):
+    """Split text boxes taller than *min_height* px at horizontal line gaps.
+
+    Uses horizontal projection on the grayscale crop to locate gaps between
+    text lines, then picks split points so each slice stays under *max_slice*.
+
+    Args:
+        boxes: list of box dicts (``{cls_id, label, score, coordinate}``).
+        image: page image as numpy array (H, W, C).
+        min_height: only split boxes taller than this (pixels at 144 DPI).
+        max_slice: target maximum height per resulting slice.
+
+    Returns:
+        New list of box dicts with tall text boxes replaced by slices.
+    """
+    import cv2
+
+    img_h, img_w = image.shape[:2]
+    out = []
+    for box in boxes:
+        if box["label"] != "text":
+            out.append(box)
+            continue
+        x1, y1, x2, y2 = box["coordinate"]
+        if y2 - y1 <= min_height:
+            out.append(box)
+            continue
+
+        # Crop and compute horizontal projection
+        cx1, cy1 = max(0, int(x1)), max(0, int(y1))
+        cx2, cy2 = min(img_w, int(x2)), min(img_h, int(y2))
+        if cx2 <= cx1 or cy2 <= cy1:
+            out.append(box)
+            continue
+        gray = cv2.cvtColor(image[cy1:cy2, cx1:cx2], cv2.COLOR_BGR2GRAY)
+        binary = (gray < 180).astype(np.int32)
+        proj = binary.sum(axis=1)
+
+        # Identify gap rows
+        if proj.max() == 0:
+            out.append(box)
+            continue
+        thresh = proj.max() * 0.05
+        is_gap = proj <= thresh
+
+        # Collect gap midpoints
+        gaps = []
+        in_gap = False
+        gap_start = 0
+        for row in range(len(is_gap)):
+            if is_gap[row] and not in_gap:
+                gap_start = row
+                in_gap = True
+            elif not is_gap[row] and in_gap:
+                gaps.append((gap_start + row) // 2)
+                in_gap = False
+
+        # Pick split points spaced by max_slice
+        split_ys = []
+        last = 0
+        for g in gaps:
+            if g - last >= max_slice:
+                split_ys.append(g)
+                last = g
+        if not split_ys:
+            out.append(box)
+            continue
+
+        # Build sub-boxes (drop polygon_points — no longer valid for slices)
+        base = {k: v for k, v in box.items() if k != "polygon_points"}
+        prev = 0
+        for sy in split_ys:
+            out.append({**base, "coordinate": [x1, y1 + prev, x2, y1 + sy]})
+            prev = sy
+        out.append({**base, "coordinate": [x1, y1 + prev, x2, y2]})
+    return out
+
+
 def to_pil_image(img):
     """
     Convert the input to a PIL Image.
