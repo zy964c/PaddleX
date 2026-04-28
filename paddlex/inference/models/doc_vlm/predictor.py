@@ -270,6 +270,7 @@ class DocVLMPredictor(BasePredictor):
                 top_p=top_p,
                 min_pixels=min_pixels,
                 max_pixels=max_pixels,
+                frequency_penalty=kwargs.get("frequency_penalty"),
             )
 
         result_dict = self._format_result_dict(preds, src_data)
@@ -413,6 +414,7 @@ class DocVLMPredictor(BasePredictor):
         top_p,
         min_pixels,
         max_pixels,
+        frequency_penalty=None,
     ):
         futures = []
         try:
@@ -481,6 +483,9 @@ class DocVLMPredictor(BasePredictor):
 
                 if repetition_penalty is not None:
                     kwargs["extra_body"]["repetition_penalty"] = repetition_penalty
+
+                if frequency_penalty is not None:
+                    kwargs["frequency_penalty"] = frequency_penalty
 
                 if min_pixels is not None:
                     if self._genai_client.backend == "vllm-server":
