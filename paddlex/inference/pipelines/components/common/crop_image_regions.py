@@ -68,16 +68,24 @@ class CropByBoxes(BaseOperator):
             img_crop = img[ymin:ymax, xmin:xmax].copy()
             out_info = {"img": img_crop, "box": box, "label": label}
             if layout_shape_mode != "rect" and "polygon_points" in box_info:
-                mask = np.zeros(img_crop.shape[:2], dtype=np.int32)
-                polygon = np.array(box_info["polygon_points"], dtype=np.int32)
-                polygon = polygon.reshape((-1, 1, 2))
-                if polygon is not None and len(polygon) > 0:
-                    polygon = polygon - np.array([xmin, ymin])
-                cv2.fillPoly(mask, [polygon], 1)
-                mask = mask.astype(bool)
-                img_crop[~mask] = 255
-                out_info["img"] = img_crop
-                out_info["polygon_points"] = box_info["polygon_points"]
+                try:
+                    mask = np.zeros(img_crop.shape[:2], dtype=np.int32)
+                    polygon = np.array(box_info["polygon_points"], dtype=np.int32)
+                    polygon = polygon.reshape((-1, 1, 2))
+                    if len(polygon) > 0:
+                        polygon = polygon - np.array([xmin, ymin])
+                        # Clip polygon points to mask boundaries to prevent cv2 range errors
+                        crop_height, crop_width = img_crop.shape[:2]
+                        polygon[:, :, 0] = np.clip(polygon[:, :, 0], 0, crop_width - 1)
+                        polygon[:, :, 1] = np.clip(polygon[:, :, 1], 0, crop_height - 1)
+                    cv2.fillPoly(mask, [polygon], 1)
+                    mask = mask.astype(bool)
+                    img_crop[~mask] = 255
+                    out_info["img"] = img_crop
+                    out_info["polygon_points"] = box_info["polygon_points"]
+                except (cv2.error, ValueError, IndexError):
+                    # If polygon processing fails, fall back to rectangular crop
+                    pass
 
             output_list.append(out_info)
         return output_list
