@@ -44,6 +44,8 @@ from .uilts import (
     post_process_for_spotting,
     pre_process_for_spotting,
     sort_boxes_reading_order,
+    join_text_slices,
+    split_text_block_image,
     tokenize_figure_of_table,
     truncate_repetitive_content,
     untokenize_figure_of_table,
@@ -268,6 +270,8 @@ class _PaddleOCRVLPipeline(BasePipeline):
         default_min_pixels = min_pixels if min_pixels is not None else 112896
         max_pixels = vlm_kwargs.pop("max_pixels", None)
         default_max_pixels = max_pixels if max_pixels is not None else 1003520
+        # 0 = off; the API sets it (TEXT_SLICE_MAX_LINES) through vlm_extra_args
+        text_slice_max_lines = vlm_kwargs.pop("text_slice_max_lines", 0) or 0
 
         batch_dict_by_pixel = {}
         id2pixel_key_map = {}
@@ -356,12 +360,19 @@ class _PaddleOCRVLPipeline(BasePipeline):
                             "vlm_block_ids": [],
                             "curr_vlm_block_idx": 0,
                         }
-                    batch_dict_by_pixel[pixel_key]["images"].append(block_img)
-                    batch_dict_by_pixel[pixel_key]["queries"].append(text_prompt)
-                    batch_dict_by_pixel[pixel_key]["figure_token_maps"].append(
-                        figure_token_map
-                    )
-                    batch_dict_by_pixel[pixel_key]["vlm_block_ids"].append((i, j))
+                    # a tall text block goes to the VLM in slices cut between its lines
+                    # (split_text_block_image); their results are joined back below
+                    for block_part in (
+                        split_text_block_image(block_img, text_slice_max_lines)
+                        if text_prompt == "OCR:"
+                        else [block_img]
+                    ):
+                        batch_dict_by_pixel[pixel_key]["images"].append(block_part)
+                        batch_dict_by_pixel[pixel_key]["queries"].append(text_prompt)
+                        batch_dict_by_pixel[pixel_key]["figure_token_maps"].append(
+                            figure_token_map
+                        )
+                        batch_dict_by_pixel[pixel_key]["vlm_block_ids"].append((i, j))
                     id2pixel_key_map[(i, j)] = pixel_key
                     drop_figures_set.update(drop_figures)
             del blocks_for_img
@@ -425,6 +436,19 @@ class _PaddleOCRVLPipeline(BasePipeline):
                         curr_vlm_block_idx
                     ]
                     curr_vlm_block_idx += 1
+                    slice_texts = [vl_rec_result.get("result") or ""]
+                    while (
+                        curr_vlm_block_idx < len(pixel_info["vlm_block_ids"])
+                        and pixel_info["vlm_block_ids"][curr_vlm_block_idx] == (i, j)
+                    ):
+                        slice_texts.append(
+                            pixel_info["vlm_results"][curr_vlm_block_idx].get("result")
+                            or ""
+                        )
+                        curr_vlm_block_idx += 1
+                    if len(slice_texts) > 1:
+                        vl_rec_result["result"] = join_text_slices(slice_texts)
+                        block_img4vl = block_img
                     pixel_info["curr_vlm_block_idx"] = curr_vlm_block_idx
                     vl_rec_result["image"] = block_img4vl
                     result_str = vl_rec_result.get("result", "")

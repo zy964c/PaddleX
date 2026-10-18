@@ -183,6 +183,78 @@ def sort_boxes_reading_order(boxes: List[Dict]) -> List[Dict]:
     return result
 
 
+def split_text_block_image(img, max_lines):
+    """Slices of a text-block crop cut between its lines, at most ``max_lines`` lines each.
+
+    On one crop of 30+ lines the VLM skips lines of repetitive text (enumerations, dose ranges, lists of
+    near-identical names); slices of up to 12 lines took the lost text of such blocks from 4.3% to 0.03%
+    (paddle-ocr-vllm AGENTS.md, v16 log 40). A line is a run of pixel rows with ink; a row with ink on at
+    most 0.2% of the width is blank. A run under half the median height (a superscript, an accent row)
+    joins the nearer neighbour, so a cut never separates a script from its line. Cuts go through the
+    middle of the blank gap; nothing is dropped. ``[img]`` when the block has ``max_lines`` lines or fewer,
+    or does not look like horizontal lines of one column: narrower than 30 line heights (rotated captions of
+    drawing pages: 3-27; horizontal text: 36+) or crossed top to bottom by a blank strip of max(15 px, 2% of
+    the width) (side-by-side columns, several rotated lines) — cut across, those come back as fragments.
+    shortcut: a single column narrower than 30 line heights is not sliced either; lower the bar if such
+    columns turn out to lose lines.
+    """
+    if not max_lines or img is None or img.size == 0:
+        return [img]
+    import cv2
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+    blank = (gray < 128).sum(axis=1) <= max(1, int(0.002 * gray.shape[1]))
+    bands, start = [], None
+    for y, is_blank in enumerate(blank):
+        if not is_blank and start is None:
+            start = y
+        elif is_blank and start is not None:
+            bands.append([start, y])
+            start = None
+    if start is not None:
+        bands.append([start, len(blank)])
+    if len(bands) <= max_lines:
+        return [img]
+    median = float(np.median([b - a for a, b in bands]))
+    i = 0
+    while i < len(bands) and len(bands) > 1:
+        a, b = bands[i]
+        if b - a >= 0.5 * median:
+            i += 1
+            continue
+        up = a - bands[i - 1][1] if i > 0 else float("inf")
+        down = bands[i + 1][0] - b if i + 1 < len(bands) else float("inf")
+        k = i - 1 if up <= down else i + 1
+        lo, hi = min(i, k), max(i, k)
+        bands[lo : hi + 1] = [[bands[lo][0], bands[hi][1]]]
+        i = lo  # the merged band is checked again
+    if len(bands) <= max_lines:
+        return [img]
+    width = gray.shape[1]
+    if width < 30 * float(np.median([b - a for a, b in bands])):
+        return [img]
+    blank_columns = (gray < 128).sum(axis=0) <= max(1, int(0.002 * gray.shape[0]))
+    strip = longest = 0
+    for x in range(int(0.1 * width), int(0.9 * width)):
+        strip = strip + 1 if blank_columns[x] else 0
+        longest = max(longest, strip)
+    if longest >= max(15, 0.02 * width):
+        return [img]
+    groups = math.ceil(len(bands) / max_lines)
+    starts = [round(g * len(bands) / groups) for g in range(1, groups)]
+    edges = [0, *((bands[s - 1][1] + bands[s][0]) // 2 for s in starts), img.shape[0]]
+    return [img[a:b] for a, b in zip(edges, edges[1:])]
+
+
+def join_text_slices(texts):
+    """Texts of one block's slices as the block's text: a space between slices, none after a line-end hyphen."""
+    out = ""
+    for text in (t.strip() for t in texts):
+        if text:
+            out = text if not out else out + ("" if out.endswith("-") else " ") + text
+    return out
+
+
 def to_pil_image(img):
     """
     Convert the input to a PIL Image.
